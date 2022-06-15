@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# unmounts /run and points in to /var/run
+
+description="Fix run"
+
+depend() {
+}
+
+start() {
+    ebegin "Running hacks to make system fit for flash memory systems"
+    if [ ! -L "/run/run" ]; then
+        eindent
+        ebegin "mounting /run on /var/run"
+        ln -s /run /run/run /
+        eend 0
+        eoutdent
+    fi
+    eend 0
+}

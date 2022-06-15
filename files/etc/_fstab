@@ -1,0 +1,3 @@
+LABEL=rootfs   /                       ext4   noatime,nodiratime,discard,errors=remount-ro     0 1
+LABEL=BOOT   /boot                vfat   defaults     0 2
+tmpfs               /run                 tmpfs mode=0755,nosuid,nodev,strictatime,size=50% 0 2

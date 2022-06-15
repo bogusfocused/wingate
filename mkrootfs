@@ -1,0 +1,111 @@
+#!/bin/bash
+apt install qemu-user-static ipcalc
+#Prepare
+IMAGE="$(pwd)/alpine.img"
+ROOT="$(pwd)/alpine"
+DEV="/dev/loop5"
+
+: ${SERVER:="10.0.0.1/24"}
+
+prepare_mkr() {
+    rm $IMAGE
+    fallocate -l 1G $IMAGE
+    sfdisk -X dos $IMAGE <<-EOF
+		,256M,c,*
+		,128M,L,
+		,,L,
+		write
+	EOF
+}
+
+#Format
+format_mkr() {
+    losetup -P $DEV ${IMAGE}
+    mkfs.vfat -F32 -n BOOT ${DEV}p1
+    mkfs.ext4 -O ^has_journal -L rootfs ${DEV}p3
+}
+#mount
+mount_mkr() {
+    rm -rf $ROOT
+    mkdir -p $ROOT
+    mount -t ext4 -o noload,noatime,nodiratime,discard ${DEV}p3 ${ROOT}
+    mkdir -p ${ROOT}/boot
+    mount -t vfat ${DEV}p1 ${ROOT}/boot
+}
+
+#rootfs
+rootfs_mkr() {
+    #qemu
+    update-binfmts --enable
+    TMP_DIR="$(pwd)/tmp"
+    mkdir -p $TMP_DIR
+    local apk="${TMP_DIR}/apk.static --root ${ROOT}"
+    wget -O "${TMP_DIR}/apk.static" "https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic//v2.12.10/x86_64/apk.static"
+    chmod +x "${TMP_DIR}/apk.static"
+    URL="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-minirootfs-3.16.0-aarch64.tar.gz"
+
+    chmod +x apk.static
+    rm -rf $ROOT/*
+    wget -O - $URL | tar -xz -C $ROOT
+
+    $apk update
+    $apk add --no-cache alpine-base \
+        linux-rpi4 raspberrypi-bootloader \
+        openrc e2fsprogs e2fsprogs-extra dosfstools openssh mdevd \
+        busybox-initscripts util-linux util-linux-misc bridge haveged dhcp unbound \
+        nftables procps hostapd
+    update-binfmts --disable
+    echo "root:" | chpasswd -m -R $ROOT
+
+}
+#files
+_files_mkr() {
+    cd files
+    # create all folders
+    find . -type d -printf "$ROOT+%h\n" | sed -e 's|+.||' | while read -r tgt; do
+        if [ ! -d $tgt ]; then
+            echo "creating $tgt"
+            mkdir -p $tgt
+        fi
+    done
+    #read -p "continue?"
+    #copy all links
+    find . -type l -printf "%P $ROOT+%h $ROOT+%p\n" | sed -e 's|+.||g' | while read -r src dst tgt; do
+        if [ -d $tgt ]; then
+            echo "deleting /$src"
+            rm -rf $tgt
+        fi
+        cp -av $src $dst
+    done
+    # copy files
+    find . -type f ! -name '_*' -a ! -name '~*' -printf "%P $ROOT+%h\n" | sed -e 's|+.||' | while read -r src tgt; do
+        cp -av $src $tgt
+    done
+
+    find . -type f -name '_*' -printf "$ROOT/%P %h+%f\n" | sed -e 's|/_|/|' -e 's|+|/|' | while read -r tgt src; do
+        echo "$src -->> $tgt"
+        cat $src >>$tgt
+    done
+    find . -type f -name '~*' -printf "%h+%f $ROOT/%P\n" | sed -e 's|/~|/|' -e 's|+|/|' | while read -r src tgt; do
+        echo "$src >> $tgt"
+        source $src $tgt
+    done
+    cd ..
+}
+
+#cleanup
+function cleanup_mkr() {
+    rm -rf $ROOT/run/*
+    umount $ROOT/boot
+    umount $ROOT
+    losetup -d $DEV
+}
+
+prepare_mkr
+format_mkr
+mount_mkr
+install_apk_mkr
+rootfs_mkr
+_files_mkr
+read -p "continue!"
+cleanup_mkr

@@ -1,0 +1,2 @@
+sed -i 's/#PermitRootLogin /PermitRootLogin yes #/' $1
+sed -i 's/#PermitEmptyPasswords /PermitEmptyPasswords yes #/' $1

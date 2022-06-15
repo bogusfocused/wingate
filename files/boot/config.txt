@@ -1,0 +1,7 @@
+	[pi4]
+	arm_64bit=1
+	dtoverlay=disable-bt
+	kernel=vmlinuz-rpi4
+	initramfs initramfs-rpi4
+	camera_auto_detect=0
+	display_auto_detect=1
