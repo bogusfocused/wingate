@@ -1,111 +1,111 @@
 #!/bin/bash
-apt install qemu-user-static ipcalc
-#Prepare
-IMAGE="$(pwd)/alpine.img"
-ROOT="$(pwd)/alpine"
-DEV="/dev/loop5"
 
-: ${SERVER:="10.0.0.1/24"}
-
-prepare_mkr() {
-    rm $IMAGE
-    fallocate -l 1G $IMAGE
-    sfdisk -X dos $IMAGE <<-EOF
+function create_image() {
+    apt install qemu-user-static ipcalc
+    local image="$1"
+    local root=$(mktemp -d -p "$TMP_DIR")
+    local dev=$(losetup -f)
+    rm $image
+    fallocate -l 1G $image
+    sfdisk -X dos $image <<-EOF
 		,256M,c,*
 		,128M,L,
 		,,L,
 		write
 	EOF
-}
-
-#Format
-format_mkr() {
-    losetup -P $DEV ${IMAGE}
-    mkfs.vfat -F32 -n BOOT ${DEV}p1
-    mkfs.ext4 -O ^has_journal -L rootfs ${DEV}p3
-}
-#mount
-mount_mkr() {
-    rm -rf $ROOT
-    mkdir -p $ROOT
-    mount -t ext4 -o noload,noatime,nodiratime,discard ${DEV}p3 ${ROOT}
-    mkdir -p ${ROOT}/boot
-    mount -t vfat ${DEV}p1 ${ROOT}/boot
-}
-
-#rootfs
-rootfs_mkr() {
+    losetup -P $dev ${image}
+    mkfs.vfat -F32 -n BOOT ${dev}p1
+    mkfs.ext4 -O ^has_journal -L rootfs ${dev}p3
+    mkdir -p $root
+    mount -t ext4 -o noload,noatime,nodiratime,discard ${dev}p3 ${root}
+    mkdir -p ${root}/boot
+    mount -t vfat ${dev}p1 ${root}/boot
     #qemu
     update-binfmts --enable
-    TMP_DIR="$(pwd)/tmp"
-    mkdir -p $TMP_DIR
-    local apk="${TMP_DIR}/apk.static --root ${ROOT}"
-    wget -O "${TMP_DIR}/apk.static" "https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic//v2.12.10/x86_64/apk.static"
-    chmod +x "${TMP_DIR}/apk.static"
-    URL="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-minirootfs-3.16.0-aarch64.tar.gz"
+    local apk_dir=$(mktemp -d -p "$TMP_DIR")
+    mkdir -p $apk_dir
+    local apk="${apk_dir}/apk.static --root ${root}"
+    wget -O "${apk_dir}/apk.static" "https://gitlab.alpinelinux.org/api/v4/projects/5/packages/generic//v2.12.10/x86_64/apk.static"
+    chmod +x "${apk_dir}/apk.static"
 
     chmod +x apk.static
-    rm -rf $ROOT/*
-    wget -O - $URL | tar -xz -C $ROOT
+    rm -rf $root/*
+    wget -O - $URL | tar -xz -C $root
 
     $apk update
     $apk add --no-cache alpine-base \
         linux-rpi4 raspberrypi-bootloader \
         openrc e2fsprogs e2fsprogs-extra dosfstools openssh mdevd \
         busybox-initscripts util-linux util-linux-misc bridge haveged dhcp unbound \
-        nftables procps hostapd
+        nftables procps hostapd iw strace
     update-binfmts --disable
-    echo "root:" | chpasswd -m -R $ROOT
-
+    echo "root:" | chpasswd -m -R $root
+    rm -rf $root/run/*
+    umount ${root}/boot
+    umount $root
+    losetup -d $dev
 }
 #files
-_files_mkr() {
-    cd files
-    # create all folders
-    find . -type d -printf "$ROOT+%h\n" | sed -e 's|+.||' | while read -r tgt; do
-        if [ ! -d $tgt ]; then
-            echo "creating $tgt"
-            mkdir -p $tgt
-        fi
+copy_files() {
+    local root="$1"
+    rm -rf $root/{var,tmp}
+    rsync -av --exclude "_*" --exclude "~*" files/ $root/
+    find files -type f -name '_*' -printf "%P %h/%f\n" | sed -e 's|/_|/|' | while read -r tgt src; do
+        lines=$(cat $src | tee -a "$root/$tgt" | wc -l)
+        echo "${lines} lines appended to /$tgt"
     done
-    #read -p "continue?"
-    #copy all links
-    find . -type l -printf "%P $ROOT+%h $ROOT+%p\n" | sed -e 's|+.||g' | while read -r src dst tgt; do
-        if [ -d $tgt ]; then
-            echo "deleting /$src"
-            rm -rf $tgt
-        fi
-        cp -av $src $dst
+    find files -type f -name '~*' -printf "%P %h/%f\n" | sed -e 's|/~|/|' | while read -r tgt src; do
+        source $src "$root/$tgt"
+        echo "processed /$tgt"
     done
-    # copy files
-    find . -type f ! -name '_*' -a ! -name '~*' -printf "%P $ROOT+%h\n" | sed -e 's|+.||' | while read -r src tgt; do
-        cp -av $src $tgt
-    done
-
-    find . -type f -name '_*' -printf "$ROOT/%P %h+%f\n" | sed -e 's|/_|/|' -e 's|+|/|' | while read -r tgt src; do
-        echo "$src -->> $tgt"
-        cat $src >>$tgt
-    done
-    find . -type f -name '~*' -printf "%h+%f $ROOT/%P\n" | sed -e 's|/~|/|' -e 's|+|/|' | while read -r src tgt; do
-        echo "$src >> $tgt"
-        source $src $tgt
-    done
-    cd ..
 }
 
 #cleanup
-function cleanup_mkr() {
-    rm -rf $ROOT/run/*
-    umount $ROOT/boot
-    umount $ROOT
-    losetup -d $DEV
+function cleanup() {
+    local root="$1"
+    local dev="$2"
+
+    umount -v $root/boot
+    umount -v $root
+    losetup -v -d $dev
 }
 
-prepare_mkr
-format_mkr
-mount_mkr
-install_apk_mkr
-rootfs_mkr
-_files_mkr
-read -p "continue!"
-cleanup_mkr
+mount_image() {
+    local root="$1"
+    shift
+    local image="$1"
+    shift
+    rm -rf $root
+    local dev=$(losetup -f)
+
+    losetup -Pv $dev ${image}
+    mkdir -p $root
+    mount -v -t ext4 -o noload,noatime,nodiratime,discard ${dev}p3 ${root}
+    mkdir -p ${root}/boot
+    mount -v -t vfat ${dev}p1 ${root}/boot
+
+    trap "cleanup $root $dev" EXIT
+
+}
+
+: ${TMP_DIR:="$(pwd)/tmp"}
+mkdir -p "$TMP_DIR"
+echo "Using $TMP_DIR as temp dir"
+ALPINE_VERSION="3.16.0"
+IMAGE="$(pwd)/wingate-${ALPINE_VERSION}.img"
+BASE_IMAGE="$(pwd)/alpine-${ALPINE_VERSION}.img"
+ROOT=$(mktemp -d -p "$TMP_DIR")
+URL="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/aarch64/alpine-minirootfs-${ALPINE_VERSION}-aarch64.tar.gz"
+
+: ${SERVER:="192.168.0.1/24"}
+
+if [ ! -f $BASE_IMAGE ]; then
+    create_image $IMAGE
+    cp -avf $IMAGE $BASE_IMAGE
+else
+    cp -avf $BASE_IMAGE $IMAGE
+fi
+mount_image $ROOT $IMAGE
+copy_files $ROOT
+read -p "exit?"
+exit 0

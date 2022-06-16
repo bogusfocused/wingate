@@ -1,0 +1,4 @@
+source /etc/wingate/hacks.sh
+
+#cfgfile="/etc/ssh/sshd_config"
+hack_copy /etc/ssh/sshd_config cfgfile

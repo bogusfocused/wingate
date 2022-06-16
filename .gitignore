@@ -1,4 +1,4 @@
 /alpine
 /etc
-alpine.img
-tmp/apk.static
+/tmp
+*.img

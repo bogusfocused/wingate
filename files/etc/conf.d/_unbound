@@ -1,1 +1,6 @@
 rc_need="!net net.br0"
+source /etc/wingate/hacks.sh
+hack_copy /etc/unbound/server.conf
+hack_copy /etc/unbound/forward-zone.conf
+#cfgfile="/etc/unbound/$RC_SVCNAME.conf"
+hack_copy "/etc/unbound/$RC_SVCNAME.conf" cfgfile

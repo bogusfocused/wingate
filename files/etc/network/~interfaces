@@ -8,15 +8,11 @@ cat <<-EOF >$ROOT/etc/network/interfaces
 	auto eth0
 	iface eth0 inet dhcp
 
-	auto wlan0
-	iface wlan0 inet manual
-
 	allow-hotplug eth1
 	iface eth1 inet dhcp
 
-	auto br0
-	bridge_ports
 	iface br0 inet static
+	bridge_ports
 	address $SERVER
 	gateway $GATEWAY
 

@@ -1,0 +1,8 @@
+# Space separated list of configuration files
+source /etc/wingate/hacks.sh
+rc_need="!net net.br0"
+hack_copy /etc/hostapd/hostapd.conf cfgfile
+CONFIGS=$cfgfile
+
+# Extra options to pass to hostapd, see hostapd(8)
+OPTIONS=""
