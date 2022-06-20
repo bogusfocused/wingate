@@ -1,3 +1,0 @@
-source /etc/wingate/hacks.sh
-
-hack_copy /etc/network/interfaces cfgfile

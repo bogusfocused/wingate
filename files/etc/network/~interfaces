@@ -2,16 +2,16 @@
 : ${GATEWAY:="$IP_ADDR"}
 
 cat <<-EOF >$ROOT/etc/network/interfaces
-	auto lo
-	iface lo inet loopback
-
 	auto eth0
-	iface eth0 inet dhcp
+	iface eth0 
+		use dhcp
 
 	allow-hotplug eth1
-	iface eth1 inet dhcp
+	iface eth1
+		use dhcp
 
-	iface br0 inet static
+	iface br0
+	use bridge
 	bridge_ports
 	address $SERVER
 	gateway $GATEWAY

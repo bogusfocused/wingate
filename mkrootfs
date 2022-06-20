@@ -58,6 +58,7 @@ copy_files() {
         source $src "$root/$tgt"
         echo "processed /$tgt"
     done
+    touch "/sbin/openrc-run"
 }
 
 #cleanup
@@ -106,6 +107,7 @@ else
     cp -avf $BASE_IMAGE $IMAGE
 fi
 mount_image $ROOT $IMAGE
+read -p "copy files?"
 copy_files $ROOT
 read -p "exit?"
 exit 0

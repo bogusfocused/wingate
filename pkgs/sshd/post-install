@@ -1,0 +1,3 @@
+file="/etc/ssh/sshd_config"
+sed -i 's/#PermitRootLogin /PermitRootLogin yes #/' $file
+sed -i 's/#/mnt/wsl/PHYSICALDRIVE1/projects/wingate/files/bootPermitEmptyPasswords /PermitEmptyPasswords yes #/' $file
